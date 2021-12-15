@@ -30,3 +30,10 @@
 *.exe
 *.out
 *.app
+/RemoteClient/.vs
+/RemoteCtrl/.vs
+/RemoteClient/.vs/RemoteClient/v15/.suo
+/RemoteClient/.vs/RemoteClient/v15/Browse.VC.db
+/RemoteClient/RemoteClient.cpp
+/RemoteCtrl/RemoteCtrl.vcxproj.user
+/RemoteClient/RemoteClient.vcxproj.user
