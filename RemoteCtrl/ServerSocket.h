@@ -1,6 +1,68 @@
 #pragma once
 #include "pch.h"
 #include "framework.h"
+class CPacket {
+public:
+	CPacket():sHead(0), nLength(0), sCmd(0), sSum(0) {
+
+	}
+
+	CPacket(const BYTE* pData, size_t& nSize) {
+		size_t i = 0;
+		for ( ; i < nSize; ++i) {
+			if (*(WORD*)(pData + i) == 0xFEFF) {
+				sHead = *(WORD*)(pData + i);
+				i += 2;
+				break;
+			}
+		}
+		if (i+4+2+2 > nSize) {
+			nSize = 0;
+			return;
+		}
+		nLength = *(DWORD*)(pData + i); i += 4;
+		if (nLength + i > nSize) {
+			nSize = 0;
+			return;
+		}
+		sCmd = *(WORD*)(pData + i); i += 2;
+		strData.resize(nLength - 2 - 2);
+		memcpy((void*)strData.c_str(), pData + i, nLength-4);
+		i += nLength - 4;
+		sSum = *(WORD*)(pData + i); i += 2;
+		WORD sum = 0;
+		for (size_t j = 0; j < strData.size(); ++j) {
+			sum += BYTE(strData[i]) & 0xFF;
+		}
+		if (sSum == sum) {
+			nSize = i; 
+			return;
+		}
+		nSize = 0;
+		return;
+	}
+	CPacket(const CPacket& pack) {
+		sHead = pack.sHead;
+		nLength = pack.nLength;
+		sCmd = pack.sCmd;
+		sSum = pack.sSum;
+	}
+	~CPacket() {
+
+	}
+	CPacket& operator=(CPacket& pack) {
+		sHead = pack.sHead;
+		nLength = pack.nLength;
+		sCmd = pack.sCmd;
+		sSum = pack.sSum;
+	}
+public:
+	WORD sHead;//包头 FE FF
+	DWORD nLength;
+	WORD sCmd;//控制命令
+	std::string strData;
+	WORD sSum;//和校验
+};
 class CServerSocket
 {
 public:
@@ -42,14 +104,24 @@ public:
 	}
 	int DealCommand() {
 		if (m_client == -1) return -1;
-		char buff[1024] = { 0 };
+		char *buff = new char[4096];
+		memset(buff, 0, sizeof buff);
+		size_t index = 0;
 		while (true) {
-			int len = recv(m_client, buff, sizeof(buff) - 1, 0);
+			size_t len = recv(m_client, buff+index, sizeof(buff)-index, 0);
 			if (len <= 0) {
 				return -1;
 			}
-			//TODO : 处理命令
+			index += len;
+			len = index;
+			CPacket packet((BYTE*)buff, len);
+			if (len > 0) {
+				memmove(buff, buff + len, sizeof(buff)-len);
+				index -= len;
+				return packet.sCmd;
+			}
 		}
+		return -1;
 	}
 	bool Send(const char* pData, int nSize) {
 		if (m_client == -1) return false;
@@ -57,6 +129,7 @@ public:
 	}
 private:
 	SOCKET m_sock, m_client;
+	CPacket m_packet;
 	CServerSocket& operator=(const CServerSocket&) {
 		
 	}
