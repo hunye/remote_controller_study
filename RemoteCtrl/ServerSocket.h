@@ -6,8 +6,23 @@ public:
 	CPacket():sHead(0), nLength(0), sCmd(0), sSum(0) {
 
 	}
-
-	CPacket(const BYTE* pData, size_t& nSize) {
+	CPacket(WORD nCmd, const BYTE* pData, size_t nSize) {
+		sHead = 0xFEFF;
+		nLength = nSize + 4;
+		sCmd = nCmd;
+		if (nSize > 0) {
+			strData.resize(nSize);
+			memcpy((void*)strData.c_str(), pData, nSize);
+		}
+		else {
+			strData.clear();
+		}
+		sSum = 0;
+		for (size_t j = 0; j < strData.size(); ++j) {
+			sSum += BYTE(strData[j]) & 0xFF;
+		}
+	}
+	CPacket(const BYTE* pData, size_t& nSize) { //解包
 		size_t i = 0;
 		for ( ; i < nSize; ++i) {
 			if (*(WORD*)(pData + i) == 0xFEFF) {
@@ -32,7 +47,7 @@ public:
 		sSum = *(WORD*)(pData + i); i += 2;
 		WORD sum = 0;
 		for (size_t j = 0; j < strData.size(); ++j) {
-			sum += BYTE(strData[i]) & 0xFF;
+			sum += BYTE(strData[j]) & 0xFF;
 		}
 		if (sSum == sum) {
 			nSize = i; 
@@ -56,12 +71,29 @@ public:
 		sCmd = pack.sCmd;
 		sSum = pack.sSum;
 	}
+	int Size() {
+		return nLength + 6;
+	}
+	const char * Data() {
+		strOut.resize(Size());
+		BYTE* pData = (BYTE*)strOut.c_str();
+		*(WORD*)pData = sHead; pData += 2;
+		*(DWORD*)pData = nLength; pData += 4;
+		*(WORD*)pData = sCmd; pData += 2;
+		OutputDebugStringA(strOut.c_str());
+		memcpy(pData, strData.c_str(), strData.size()); pData += strData.size();
+		*(WORD*)pData = sSum;
+
+		return strOut.c_str();
+	}
 public:
 	WORD sHead;//包头 FE FF
 	DWORD nLength;
 	WORD sCmd;//控制命令
 	std::string strData;
 	WORD sSum;//和校验
+	std::string strOut; //整个包的数据
+
 };
 class CServerSocket
 {
@@ -126,6 +158,19 @@ public:
 	bool Send(const char* pData, int nSize) {
 		if (m_client == -1) return false;
 		return send(m_client, pData, nSize, 0)>0;
+	}
+	bool Send(CPacket& pack) {
+		if (m_client == -1) return false;
+
+		return send(m_client, pack.Data(), pack.Size(), 0) > 0;
+	}
+	bool GetFilePath(std::string &strPath) {
+		if (m_packet.sCmd >= 2 || m_packet.sCmd<=4) {
+			strPath = m_packet.strData;
+			return true;
+		}
+		return false;
+		
 	}
 private:
 	SOCKET m_sock, m_client;
