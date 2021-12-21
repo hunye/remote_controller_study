@@ -8,6 +8,7 @@
 #include <direct.h>
 #include <io.h>
 #include <list>
+#include<atlimage.h>
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
@@ -135,6 +136,132 @@ int DownloadFile() {
 	
 	return 0;
 }
+int MouseEvent() {
+	MOUSEEV mouse;
+	if (CServerSocket::getInstance()->GetMouseEvent(mouse)) {
+		
+		DWORD nFlags = 0;
+		switch (mouse.nButton) {
+		case 0://左键
+			nFlags = 1;
+			break;
+		case 1://右键
+			nFlags = 2;
+			break;
+		case 2://中键
+			nFlags = 4;
+			break;
+		case 4://没有按键
+			nFlags = 8;
+			break;
+
+		}
+		if (nFlags != 8) SetCursorPos(mouse.ptXY.x, mouse.ptXY.y);
+		switch (mouse.nAction) {
+		case 0://单机
+			nFlags |= 0x10;
+			break;
+		case 1://双击
+			nFlags |= 0x20;
+			break;
+		case 2://按下
+			nFlags |= 0x40;
+			break;
+		case 3://放开
+			nFlags |= 0x80;
+			break;
+		default:
+			break;
+		}
+		switch (nFlags) {//避免嵌套
+		case 0x21://左键双击
+			mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, GetMessageExtraInfo());
+			mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, GetMessageExtraInfo());
+		case 0x11://左键单机
+			mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, GetMessageExtraInfo());
+			mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, GetMessageExtraInfo());
+			break;
+		case 0x41://左键按下
+			mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, GetMessageExtraInfo());
+			break;
+		case 0x81://左键放开
+			mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, GetMessageExtraInfo());
+			break;
+		case 0x22://右键双击
+			mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, GetMessageExtraInfo());
+			mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, GetMessageExtraInfo());
+		case 0x12://右键单击
+			mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, GetMessageExtraInfo());
+			mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, GetMessageExtraInfo());
+			break;
+		case 0x42://右键按下
+			mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, GetMessageExtraInfo());
+			break;
+		case 0x82://右键放开
+			mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, GetMessageExtraInfo());
+			break;
+		case 0x24://中键双击
+			mouse_event(MOUSEEVENTF_MIDDLEDOWN, 0, 0, 0, GetMessageExtraInfo());
+			mouse_event(MOUSEEVENTF_MIDDLEUP, 0, 0, 0, GetMessageExtraInfo());
+		case 0x14://中键单击
+			mouse_event(MOUSEEVENTF_MIDDLEDOWN, 0, 0, 0, GetMessageExtraInfo());
+			mouse_event(MOUSEEVENTF_MIDDLEUP, 0, 0, 0, GetMessageExtraInfo());
+			break;
+		case 0x44://中键按下
+			mouse_event(MOUSEEVENTF_MIDDLEDOWN, 0, 0, 0, GetMessageExtraInfo());
+			break;
+		case 0x84://中键放开
+			mouse_event(MOUSEEVENTF_MIDDLEUP, 0, 0, 0, GetMessageExtraInfo());
+			break;
+		case 0x08://没有按键,单纯鼠标移动
+			mouse_event(MOUSEEVENTF_MOVE, mouse.ptXY.x, mouse.ptXY.y, 0, GetMessageExtraInfo());
+			break;
+		}
+		CPacket pack(4, NULL, 0);
+		CServerSocket::getInstance()->Send(pack);
+
+	}
+	else {
+		OutputDebugString(_T("获取鼠标操作参数失败！"));
+		return -1;
+	}
+
+	return 0;
+}
+int SendScreen() {
+	CImage screen;//GDI
+	HDC hScreen=::GetDC(NULL);
+	int nBitPerPixel = GetDeviceCaps(hScreen, BITSPIXEL);
+	int nWidth = GetDeviceCaps(hScreen, HORZRES);
+	int nHeight = GetDeviceCaps(hScreen, VERTRES);
+	screen.Create(nWidth, nHeight, nBitPerPixel);
+	BitBlt(screen.GetDC(), 0, 0, 1920, 1020, hScreen, 0, 0, SRCCOPY);
+	ReleaseDC(NULL, hScreen);
+	//DWORD tick=GetTickCount();//监控运行时间
+	HGLOBAL hMem=GlobalAlloc(GMEM_MOVEABLE, 0);//把文件保存到内存
+	if (hMem == NULL) return -1;
+	IStream *pStream = NULL;
+	HRESULT ret=CreateStreamOnHGlobal(hMem, TRUE, &pStream);//内存上创建一个流
+
+	if (ret == S_OK) {
+		screen.Save(pStream, Gdiplus::ImageFormatPNG);
+		pStream->Seek({ 0 }, STREAM_SEEK_SET, NULL);
+		PBYTE pData=(PBYTE)GlobalLock(hMem);
+		SIZE_T nSize = GlobalSize(hMem);
+		CPacket pack(6, pData, nSize);
+		CServerSocket::getInstance()->Send(pack);
+		GlobalUnlock(hMem);
+	}
+	
+
+	//screen.Save(_T("test2021.png"), Gdiplus::ImageFormatPNG); //保存到本地
+	//TRACE("png: %d ms\r\n", GetTickCount() - tick);
+	pStream->Release();
+	GlobalFree(hMem);
+	screen.ReleaseDC();
+	
+	return 0;
+}
 int main()
 {
     int nRetCode = 0;
@@ -176,7 +303,7 @@ int main()
 			//}
 
 			//文件需求
-			int nCmd = 1;
+			int nCmd = 6;
 			switch (nCmd) {
 			case 1://查看磁盘分区
 				MakeDriverInfo();
@@ -189,6 +316,12 @@ int main()
 				break;
 			case 4://下载文件
 				DownloadFile();
+				break;
+			case 5://鼠标操作
+				MouseEvent();
+				break;
+			case 6://发送屏幕内容
+				SendScreen();
 				break;
 			}
 			
