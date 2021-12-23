@@ -228,12 +228,56 @@ int MouseEvent() {
 
 	return 0;
 }
-int LockMachine() {
+#include "LockInfoDialog.h"
+CLockInfoDialog dlg;
+unsigned int threadid = 0;
+unsigned __stdcall threadLockDlg(void* arg) {
 
+	dlg.Create(IDD_DIALOG_INFO, NULL);
+	dlg.ShowWindow(SW_SHOW);//非模态的
+	CRect rect;
+	rect.left = 0, rect.top = 0;
+	rect.right = GetSystemMetrics(SM_CXFULLSCREEN), rect.bottom = GetSystemMetrics(SM_CYFULLSCREEN)*1.025;
+	//隐藏系统任务栏
+	::ShowWindow(::FindWindow(_T("Shell_Traywnd"), NULL), SW_HIDE);
+	dlg.MoveWindow(rect);
+	dlg.SetWindowPos(&dlg.wndTopMost, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE);//不能移动和改变大小 窗口置顶
+
+	//限制鼠标
+	//ShowCursor(false);
+	dlg.GetWindowRect(rect);//只能在窗口内移动
+	ClipCursor(rect);
+	//消息循环
+	MSG msg;
+	while (GetMessage(&msg, NULL, 0, 0)) {
+		TranslateMessage(&msg);//传递消息
+		DispatchMessage(&msg);//分配消息
+		if (msg.message == WM_KEYDOWN) {//按下任意键解锁
+			TRACE("msg:%08X  lparam:%0xX wparam:%08x\r\n",msg.message, msg.lParam, msg.wParam);
+			if (msg.wParam == 0x1b || msg.wParam==0x41)
+				break;
+		}
+	}
+	//ShowCursor(true);
+	::ShowWindow(::FindWindow(_T("Shell_TrayWnd"), NULL), SW_SHOW);
+	dlg.DestroyWindow();
+	_endthreadex(0);
+	return 0;
+}
+int LockMachine() {
+	if (dlg.m_hWnd == NULL || dlg.m_hWnd == INVALID_HANDLE_VALUE) {
+		//_beginthread(threadLockDlg, 0, NULL);//启动线程
+		_beginthreadex(NULL, 0, threadLockDlg, NULL, 0, &threadid);
+	}
+	CPacket pack(7, NULL, 0);
+	CServerSocket::getInstance()->Send(pack);
 	return 0;
 }
 int UnlockMachine() {
-
+	PostThreadMessage(threadid, WM_KEYDOWN, 0x41, 0); //给线程发送信息
+	//::SendMessage(dlg.m_hWnd, WM_KEYDOWN, 0x41, 0x01E0001);
+	CPacket pack(7, NULL, 0);
+	CServerSocket::getInstance()->Send(pack);
 	return 0;
 }
 int SendScreen() {
@@ -312,7 +356,8 @@ int main()
 			//}
 
 			//文件需求
-			int nCmd = 6;
+			
+			int nCmd = 7;
 			switch (nCmd) {
 			case 1://查看磁盘分区
 				MakeDriverInfo();
@@ -339,7 +384,9 @@ int main()
 				UnlockMachine();
 				break;
 			}
-			
+			Sleep(2000);
+			UnlockMachine();
+			while (dlg.m_hWnd != NULL && dlg.m_hWnd != INVALID_HANDLE_VALUE) Sleep(10); //主析构太快， 子线程会崩
 
 
         }
